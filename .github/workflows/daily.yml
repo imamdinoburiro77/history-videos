@@ -1,0 +1,54 @@
+name: Daily History Video
+
+# Runs free on GitHub Actions:
+# - every day at 12:00 UTC (= 17:00 PKT), so the posting pack is ready the
+#   same evening, well before the channel's 01:00 AM PKT publish slot
+# - or any time manually from the Actions tab ("Run workflow")
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # lets the job save used_topics.json back to the repo
+
+jobs:
+  build-video:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+
+      - name: Build today's video
+        env:
+          # The Gemini API key lives ONLY in the repo secret GEMINI_API_KEY
+          # (Settings > Secrets and variables > Actions). It is never
+          # written into any file. Without it, the template script is used.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python pipeline.py
+
+      - name: Save the topic log (so topics never repeat)
+        run: |
+          git config user.name "history-assistant"
+          git config user.email "actions@github.com"
+          git add used_topics.json || true
+          git commit -m "log used topic" || echo "nothing to commit"
+          git push || echo "push skipped"
+
+      - name: Upload the posting pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: posting-pack-${{ github.run_id }}
+          path: output/
+          retention-days: 30
